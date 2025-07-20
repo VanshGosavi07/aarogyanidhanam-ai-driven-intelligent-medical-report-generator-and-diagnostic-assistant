@@ -1,0 +1,103 @@
+# Virtual environment
+venv/
+env/
+.env
+.env.*
+
+# Database files
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Development files
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Screenshots - not needed for production
+Screenshots/
+
+# Modal folder - exclude everything except the model file we need
+Modal/Dataset/
+Modal/*.ipynb
+Modal/*.png
+Modal/*.jpg
+Modal/*.jpeg
+Modal/Training*
+Modal/Accuracy*
+# Keep the ML model file for deployment
+# Modal/breast_cancer.keras
+
+# RAG Data - PDF files might be large, exclude if not essential
+RAG Data/
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+LICENSE
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Node modules (if any)
+node_modules/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Large datasets and training data
+Dataset/
+data/
+datasets/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Cache directories
+.cache/
+cache/
+
+# Other unnecessary files for deployment
+*.md
+requirements-dev.txt

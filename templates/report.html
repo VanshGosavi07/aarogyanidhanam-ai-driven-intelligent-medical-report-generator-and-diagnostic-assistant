@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Breast Cancer Diagnosis Report</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+      :root {
+        --primary-color: #910a67; /* Deep magenta */
+        --secondary-color: #4a148c; /* Dark purple */
+        --light-bg: #f8e7f6; /* Soft pink */
+        --gradient-bg: linear-gradient(135deg, #910a67, #4a148c);
+        --text-white: #ffffff;
+        --text-dark: #333;
+        --warning-color: #ff9800;
+        --danger-color: #e53935;
+        --success-color: #43a047;
+      }
+
+      body {
+        font-family: "Poppins", sans-serif;
+        background: linear-gradient(to bottom, #ffffff, #fbf0f8);
+        margin: 0;
+        overflow-x: hidden;
+        position: relative;
+      }
+      .navbar {
+        background: linear-gradient(135deg, #910a67, #4a148c);
+        padding: 10px 0; /* Add padding for better spacing */
+      }
+
+      .navbar-brand {
+        font-size: 1.5rem; /* Increase brand font size */
+        font-weight: 600; /* Make it bold */
+        margin-right: auto; /* Push brand to the left */
+      }
+
+      .navbar-nav {
+        margin-left: auto; /* Push nav items to the right */
+      }
+
+      .nav-link {
+        font-size: 1rem; /* Adjust font size */
+        padding: 8px 15px; /* Add padding for better click area */
+        margin: 0 5px; /* Add margin between links */
+        border-radius: 4px; /* Rounded corners */
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      .nav-link:hover {
+        background-color: rgba(
+          255,
+          255,
+          255,
+          0.1
+        ); /* Light background on hover */
+        color: #ffd700 !important; /* Change text color on hover */
+      }
+
+      .nav-link::after {
+        display: none; /* Remove the underline effect */
+      }
+
+      .navbar-toggler {
+        border: none; /* Remove border from toggler */
+        padding: 0.5rem; /* Add padding for better click area */
+      }
+
+      .navbar-toggler:focus {
+        box-shadow: none; /* Remove focus shadow */
+      }
+
+      /* Adjust for smaller screens */
+      @media (max-width: 992px) {
+        .navbar-nav {
+          margin-top: 10px; /* Add space between brand and nav items */
+        }
+
+        .nav-link {
+          margin: 5px 0; /* Adjust margin for stacked items */
+        }
+      }
+
+      .container {
+        width: 700px;
+        margin: 20px auto;
+        background: #fff;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+
+      .report-header {
+        background: var(--gradient-bg);
+        color: var(--text-white);
+        padding: 10px;
+        text-align: center;
+        font-size: 1.5rem;
+        font-weight: 600;
+        border-radius: 6px;
+        margin-bottom: 15px;
+      }
+
+      .section {
+        padding: 15px;
+        background: var(--light-bg);
+        border-radius: 6px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        page-break-inside: avoid;
+      }
+
+      .section-title {
+        font-size: 1.2rem;
+        color: var(--primary-color);
+        border-bottom: 2px solid var(--secondary-color);
+        padding-bottom: 5px;
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+
+      .patient-info th {
+        background: var(--primary-color);
+        color: var(--text-white);
+        width: 35%;
+        font-size: 0.9rem;
+      }
+
+      .patient-info td {
+        font-size: 0.9rem;
+        background: #fff;
+      }
+
+      .disease-malignant {
+        color: var(--danger-color);
+        font-weight: bold;
+      }
+
+      .disease-benign {
+        color: var(--success-color);
+        font-weight: bold;
+      }
+
+      .img-container {
+        background: #fff;
+        border-radius: 6px;
+        padding: 10px;
+        border: 1px solid var(--primary-color);
+        text-align: center;
+      }
+
+      .img-container img {
+        max-width: 100%;
+        height: 200px;
+        object-fit: contain;
+        border-radius: 6px;
+      }
+
+      .doctor-info {
+        background: var(--light-bg);
+        border-left: 4px solid var(--secondary-color);
+      }
+
+      .precautions-section {
+        background: #fff3e0;
+        border-left: 4px solid var(--warning-color);
+      }
+
+      .findings-section h4 {
+        color: var(--secondary-color);
+        font-size: 1rem;
+        margin-top: 10px;
+        font-weight: 500;
+      }
+
+      .list-group-item,
+      .alert ul li,
+      .card-body p {
+        font-size: 0.9rem;
+      }
+
+      .table-striped tbody tr:nth-of-type(odd) {
+        background-color: #fbf0f8;
+      }
+
+      .table-primary th {
+        background: var(--primary-color);
+        color: var(--text-white);
+      }
+
+      .custom-btn {
+        padding: 8px 15px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        border-radius: 6px;
+        border: none;
+        transition: all 0.3s ease;
+        background: var(--gradient-bg);
+        color: var(--text-white);
+      }
+
+      .custom-btn:hover {
+        opacity: 0.9;
+      }
+
+      /* Hide elements in PDF */
+      .hide-in-pdf {
+        display: block;
+      }
+
+      @media print {
+        body {
+          background: white !important;
+          margin: 0;
+          padding: 0;
+        }
+        .container {
+          width: 100%;
+          margin: 0;
+          padding: 10mm;
+          box-shadow: none !important;
+          border-radius: 0;
+          background: #fff !important;
+        }
+        .report-header {
+          background: var(--primary-color) !important; /* Solid color for PDF */
+          -webkit-print-color-adjust: exact;
+          color-adjust: exact;
+        }
+        .section {
+          background: var(--light-bg) !important;
+          -webkit-print-color-adjust: exact;
+          color-adjust: exact;
+        }
+        .patient-info td {
+          background: #fff !important;
+        }
+        .table-striped tbody tr:nth-of-type(odd) {
+          background-color: #fbf0f8 !important;
+          -webkit-print-color-adjust: exact;
+          color-adjust: exact;
+        }
+        .custom-btn,
+        .hide-in-pdf {
+          display: none !important;
+        }
+        .section:nth-child(3n) {
+          page-break-after: always;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4 hide-in-pdf">
+      <div class="container-fluid">
+        <!-- Use container-fluid for full width -->
+        <a class="navbar-brand" href="/">Medical Diagnosis System</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <!-- Use ms-auto to push items to the right -->
+            <li class="nav-item">
+              <a class="nav-link" href="/form">New Diagnosis Form</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" id="chatWithReportLink" href="/chat-page"
+                >Chat With Report</a
+              >
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" id="downloadBtn">Download Report</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/logout">Logout</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="container" id="report-container">
+      <div class="report-header">Breast Cancer Diagnosis Report</div>
+
+      <!-- Section 1: Patient Info -->
+      <div class="section patient-info">
+        <h3 class="section-title">Patient Information</h3>
+        <table class="table table-bordered">
+          <tbody>
+            <tr>
+              <th>Name</th>
+              <td>{{ name }}</td>
+            </tr>
+            <tr>
+              <th>Date of Birth</th>
+              <td>{{ dob }}</td>
+            </tr>
+            <tr>
+              <th>Age</th>
+              <td>{{ age }}</td>
+            </tr>
+            <tr>
+              <th>Date of Report</th>
+              <td>{{ current_date }}</td>
+            </tr>
+            <tr>
+              <th>Disease Name</th>
+              <td>{{ disease_name }}</td>
+            </tr>
+            <tr>
+              <th>Disease Level</th>
+              <td
+                class="{{ 'disease-malignant' if 'Cancer: Yes (Malignant)' in diseases_level|join(',') else 'disease-benign' }}"
+              >
+                {{ diseases_level|join(', ') }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Section 2: Image -->
+      <div class="section">
+        <h3 class="section-title">Medical Scan</h3>
+        <div class="img-container">
+          {% for image_path in image_paths %}
+          <img
+            src="{{ url_for('static', filename=image_path) }}"
+            alt="Medical Scan Image"
+          />
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Section 3: Clinical History -->
+      {% if clinical_history %}
+      <div class="section">
+        <h3 class="section-title">Clinical History</h3>
+        <p>{{ clinical_history }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Section 4: Symptoms -->
+      {% if symptoms %}
+      <div class="section">
+        <h3 class="section-title">Symptoms Description</h3>
+        <ul class="list-group">
+          {% for symptom in symptoms %}
+          <li class="list-group-item">{{ symptom }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <!-- Section 5: Detailed Findings -->
+      {% if data['clinical examination'] or data['imaging studies'] or
+      data['pathological staging'] %}
+      <div class="section findings-section">
+        <h3 class="section-title">Detailed Findings</h3>
+        {% if data['clinical examination'] %}
+        <h4>Clinical Examination</h4>
+        <p>{{ data['clinical examination'] }}</p>
+        {% endif %} {% if data['imaging studies'] %}
+        <h4>Imaging Studies</h4>
+        <table class="table table-striped table-bordered">
+          <thead>
+            <tr class="table-primary">
+              <th>Imaging Type</th>
+              <th>Findings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for study in data['imaging studies'] %}
+            <tr>
+              <td>{{ study.split(':')[0] }}</td>
+              <td>{{ study.split(':')[1] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %} {% if data['pathological staging'] %}
+        <h4>Pathological Staging</h4>
+        <p>{{ data['pathological staging'] }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Section 6: Precautions -->
+      {% if data['precautions'] %}
+      <div class="section precautions-section">
+        <h3 class="section-title">Precautions to Take</h3>
+        <div class="alert alert-warning">
+          <ul class="mb-0">
+            {% for precaution in data['precautions'] %}
+            <li>{{ precaution }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Section 7 & 8: Diet and Exercise -->
+      <div class="row">
+        {% if data['Recommended diet'] %}
+        <div class="col-md-6">
+          <div class="section">
+            <h3 class="section-title">Recommended Diet</h3>
+            <ul class="list-group">
+              {% for diet in data['Recommended diet'] %}
+              <li class="list-group-item">{{ diet }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+        {% endif %} {% if data['Recommended exercise'] %}
+        <div class="col-md-6">
+          <div class="section">
+            <h3 class="section-title">Recommended Exercise</h3>
+            <ul class="list-group">
+              {% for exercise in data['Recommended exercise'] %}
+              <li class="list-group-item">{{ exercise }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Section 9: Doctor Info -->
+      {% if user_type == 'doctor' %}
+      <div class="section doctor-info">
+        <h3 class="section-title">Report Prepared By</h3>
+        <p><strong>Doctor's Name:</strong> {{ prepared_by }}</p>
+        <p><strong>Date of Report:</strong> {{ current_date }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      document
+        .getElementById("downloadBtn")
+        .addEventListener("click", function () {
+          const btn = this;
+          btn.innerHTML = "Generating PDF...";
+          btn.disabled = true;
+
+          const element = document.getElementById("report-container");
+          const opt = {
+            margin: 10,
+            filename: "Breast_Cancer_Diagnosis_Report.pdf",
+            image: { type: "jpeg", quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          };
+
+          html2pdf()
+            .from(element)
+            .set(opt)
+            .save()
+            .then(() => {
+              btn.innerHTML = "Download Report";
+              btn.disabled = false;
+            });
+        });
+    </script>
+  </body>
+</html>
