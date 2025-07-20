@@ -260,30 +260,6 @@ htmlcov/
 # Node modules (if any frontend dependencies)
 node_modules/
 
-# Package files
-*.tar.gz
-*.zip
-*.rar
-*.7z
-*.gz
-*.bz2
-
-# Large media files
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.webm
-*.wav
-*.mp3
-*.flac
-
-# Large image files
-*.tiff
-*.tif
-*.raw
-*.bmp
-
 # Backup files
 *.bak
 *.backup
@@ -323,3 +299,31 @@ test.db
 
 # Vercel
 .vercel
+
+# Project-specific large files
+# Model files (can be large - recommended to exclude for Git)
+Modal/breast_cancer.keras
+*.h5
+*.hdf5
+*.keras
+*.pkl
+*.joblib
+
+# Large datasets (exclude all dataset folders)
+Modal/Dataset/
+Modal/Training*
+Modal/Accuracy*
+
+# Screenshots and demo images (can be large)
+Screenshots/
+Modal/*.png
+Modal/*.jpg
+Modal/*.jpeg
+
+# Jupyter Notebook files (can be large with outputs)
+*.ipynb
+Modal/*.ipynb
+
+# RAG Data folder (PDFs can be large)
+RAG\ Data/
+*.pdf
