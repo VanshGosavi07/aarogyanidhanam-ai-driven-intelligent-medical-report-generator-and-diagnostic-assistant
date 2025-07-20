@@ -1,25 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "wsgi.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "250mb",
-        "runtime": "python3.9"
-      }
+  "functions": {
+    "wsgi.py": {
+      "runtime": "python3.9",
+      "maxDuration": 30
     }
-  ],
-  "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "wsgi.py"
-    }
-  ],
+  },
   "env": {
     "FLASK_ENV": "production",
     "SECRET_KEY": "your-production-secret-key-change-this-in-production-medical-app-2025",
@@ -29,15 +15,5 @@
     "VERCEL": "1",
     "DISABLE_FILE_UPLOADS": "true"
   },
-  "functions": {
-    "wsgi.py": {
-      "maxDuration": 30
-    }
-  },
-  "regions": ["iad1"],
-  "build": {
-    "env": {
-      "PYTHON_VERSION": "3.9"
-    }
-  }
+  "regions": ["iad1"]
 }
