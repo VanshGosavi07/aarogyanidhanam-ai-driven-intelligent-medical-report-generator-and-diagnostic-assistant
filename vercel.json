@@ -1,19 +1,16 @@
 {
-  "version": 2,
-  "functions": {
-    "wsgi.py": {
-      "runtime": "@vercel/python",
-      "maxDuration": 30
-    }
-  },
-  "env": {
-    "FLASK_ENV": "production",
-    "SECRET_KEY": "your-production-secret-key-change-this-in-production-medical-app-2025",
-    "GROQ_API_KEY": "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",
-    "GROQ_API_URL": "https://api.groq.com/openai/v1/chat/completions",
-    "DATABASE_URL": "sqlite:///:memory:",
-    "VERCEL": "1",
-    "DISABLE_FILE_UPLOADS": "true"
-  },
-  "regions": ["iad1"]
+    "version": 2,
+    "builds": [
+        {
+            "src": "./index.py",
+            "use": "@vercel/python",
+            "config": {"runtime": "python3.9"}
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "/"
+        }
+    ]
 }
