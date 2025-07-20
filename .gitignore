@@ -225,17 +225,31 @@ temp/
 # Uploaded files (can be large)
 static/uploads/*
 !static/uploads/.gitkeep
+!static/uploads/README.md
 
-# Model files (can be large - optional, uncomment if needed)
-# Modal/breast_cancer.keras
-# *.h5
-# *.hdf5
-# *.keras
+# Large media files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.flac
 
-# Large datasets
-Modal/Dataset/
-data/
-datasets/
+# Large image files
+*.tiff
+*.tif
+*.raw
+*.bmp
+
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*.gz
+*.bz2
 
 # Development files
 .pytest_cache/
@@ -250,6 +264,25 @@ node_modules/
 *.tar.gz
 *.zip
 *.rar
+*.7z
+*.gz
+*.bz2
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.flac
+
+# Large image files
+*.tiff
+*.tif
+*.raw
+*.bmp
 
 # Backup files
 *.bak
