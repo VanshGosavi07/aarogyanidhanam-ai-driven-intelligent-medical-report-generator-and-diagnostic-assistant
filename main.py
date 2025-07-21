@@ -1,7 +1,6 @@
 import requests
 import json
 import os
-import cv2
 import ast
 import numpy as np
 import logging
@@ -15,18 +14,44 @@ from wtforms.validators import DataRequired, Email, ValidationError, Length
 from flask_wtf.file import FileField, FileRequired, FileAllowed
 from flask_sqlalchemy import SQLAlchemy
 import bcrypt
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
 from functools import lru_cache
 import fitz  # PyMuPDF
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
 
-# Configure logging
+# Try to import Langchain components with fallback
+try:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from langchain_community.vectorstores import FAISS
+    LANGCHAIN_AVAILABLE = True
+    logger.info("Langchain imported successfully")
+except ImportError as e:
+    logger.warning(f"Langchain import failed: {str(e)}. RAG features disabled.")
+    LANGCHAIN_AVAILABLE = False
+
+# Configure logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Try to import TensorFlow with fallback
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import load_model
+    from tensorflow.keras.preprocessing import image
+    TF_AVAILABLE = True
+    logger.info("TensorFlow imported successfully")
+except ImportError as e:
+    logger.warning(f"TensorFlow import failed: {str(e)}. ML features disabled.")
+    TF_AVAILABLE = False
+    tf = None
+
+# Try to import OpenCV, with fallback for Azure environment
+try:
+    import cv2
+    CV2_AVAILABLE = True
+    logger.info("OpenCV imported successfully")
+except ImportError as e:
+    logger.warning(f"OpenCV import failed: {str(e)}. Running in headless mode.")
+    CV2_AVAILABLE = False
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -131,10 +156,16 @@ PERSONAL_REPORTS = []
 
 class DocumentProcessor:
     def __init__(self):
-        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        self.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.vector_store = None
-        self.update_vector_store([])
+        if LANGCHAIN_AVAILABLE:
+            self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+            self.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            self.vector_store = None
+            self.update_vector_store([])
+        else:
+            logger.warning("Langchain not available, RAG features disabled")
+            self.text_splitter = None
+            self.embedding_model = None
+            self.vector_store = None
 
     def extract_text_from_pdfs(self, folder_path: str) -> List[str]:
         try:
@@ -158,30 +189,32 @@ class DocumentProcessor:
             logger.error(f"Error in PDF extraction: {str(e)}")
             return []
 
-    def update_vector_store(self, current_report: List[str]):  # Add parameter
-            try:
-                pdf_texts = self.extract_text_from_pdfs(app.config['PDF_FOLDER'])
-                all_documents = current_report + pdf_texts  # Use the passed current_report
-                if all_documents:
-                    docs = self.text_splitter.create_documents(all_documents)
-                    self.vector_store = FAISS.from_documents(docs, self.embedding_model)
-                else:
-                    self.vector_store = None
-                logger.info("Vector store updated successfully with current report")
-            except Exception as e:
-                logger.error(f"Error updating vector store: {str(e)}")
-                raise
-
+    def update_vector_store(self, current_report: List[str]):
+        if not LANGCHAIN_AVAILABLE:
+            logger.warning("Cannot update vector store - Langchain not available")
+            return
+            
+        try:
+            pdf_texts = self.extract_text_from_pdfs(app.config['PDF_FOLDER'])
+            all_documents = current_report + pdf_texts
+            if all_documents and self.text_splitter and self.embedding_model:
+                docs = self.text_splitter.create_documents(all_documents)
+                self.vector_store = FAISS.from_documents(docs, self.embedding_model)
+            else:
+                self.vector_store = None
+            logger.info("Vector store updated successfully with current report")
+        except Exception as e:
+            logger.error(f"Error updating vector store: {str(e)}")
 
     def retrieve_context(self, query: str, k: int = 3) -> str:
-        if not self.vector_store:
-            return "No context available yet. Please generate a report first."
+        if not LANGCHAIN_AVAILABLE or not self.vector_store:
+            return "RAG features not available. Please generate a report first or check Langchain installation."
         try:
             results = self.vector_store.similarity_search(query, k=k)
             return "\n".join(doc.page_content for doc in results)
         except Exception as e:
             logger.error(f"Error retrieving context: {str(e)}")
-            return ""
+            return "Error retrieving context from documents."
 
 # Groq Client
 class GroqClient:
@@ -209,9 +242,10 @@ def model_predict(image_paths: tuple) -> List[Tuple[str, str]]:
     model = get_model()
     results = []
     for img_path in image_paths:
-        # In serverless environment, use fallback predictions
-        if os.environ.get('VERCEL') or os.environ.get('DISABLE_FILE_UPLOADS'):
-            logger.warning(f"Using fallback prediction for {img_path} in serverless environment")
+        # In serverless environment or when CV2 is not available, use fallback predictions
+        if (os.environ.get('VERCEL') or os.environ.get('DISABLE_FILE_UPLOADS') or 
+            not CV2_AVAILABLE):
+            logger.warning(f"Using fallback prediction for {img_path} (OpenCV not available or serverless)")
             label = "Cancer: Analysis Available (Demo Mode)"
             new_img_path = img_path.rsplit('.', 1)[0] + '_output.png'
             results.append((label, new_img_path))
@@ -221,41 +255,58 @@ def model_predict(image_paths: tuple) -> List[Tuple[str, str]]:
         if not os.path.exists(img_full_path):
             logger.error(f"File not found: {img_full_path}")
             continue
-        img_cv = cv2.imread(img_full_path)
-        if img_cv is None:
-            logger.error(f"Failed to load image: {img_full_path}")
-            continue
-        img_copy = img_cv.copy()
-        img_resized = cv2.resize(img_cv, (224, 224))
-        img_array = image.img_to_array(img_resized) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
-        
-        if model is None:
-            # Fallback prediction if model failed to load
-            logger.warning(f"Model unavailable, using default prediction for {img_path}")
-            label = "Cancer: Unknown (Model Unavailable)"
-            color = (255, 255, 0)  # Yellow for unknown
-        else:
-            try:
-                prediction = model.predict(img_array, verbose=0)
-                label = "Cancer: Yes (Malignant)" if prediction[0][0] >= 0.5 else "Cancer: No (Non-Malignant)"
-                color = (0, 0, 255) if prediction[0][0] >= 0.5 else (0, 255, 0)
-            except Exception as e:
-                logger.error(f"Prediction failed for {img_path}: {str(e)}")
-                label = "Cancer: Unknown (Prediction Error)"
-                color = (255, 255, 0)
+            
+        try:
+            img_cv = cv2.imread(img_full_path)
+            if img_cv is None:
+                logger.error(f"Failed to load image: {img_full_path}")
+                continue
+            img_copy = img_cv.copy()
+            img_resized = cv2.resize(img_cv, (224, 224))
+            
+            # Only do ML processing if TensorFlow is available
+            if TF_AVAILABLE:
+                img_array = image.img_to_array(img_resized) / 255.0
+                img_array = np.expand_dims(img_array, axis=0)
+                
+                if model is None:
+                    # Fallback prediction if model failed to load
+                    logger.warning(f"Model unavailable, using default prediction for {img_path}")
+                    label = "Cancer: Unknown (Model Unavailable)"
+                    color = (255, 255, 0)  # Yellow for unknown
+                else:
+                    try:
+                        prediction = model.predict(img_array, verbose=0)
+                        label = "Cancer: Yes (Malignant)" if prediction[0][0] >= 0.5 else "Cancer: No (Non-Malignant)"
+                        color = (0, 0, 255) if prediction[0][0] >= 0.5 else (0, 255, 0)
+                    except Exception as e:
+                        logger.error(f"Prediction failed for {img_path}: {str(e)}")
+                        label = "Cancer: Unknown (Prediction Error)"
+                        color = (255, 255, 0)
+            else:
+                # Fallback when TensorFlow is not available
+                label = "Cancer: Analysis Available (TensorFlow Unavailable)"
+                color = (0, 255, 255)  # Cyan for TF unavailable
 
-        height, width, _ = img_copy.shape
-        padding = 100
-        start_point = (padding, padding)
-        end_point = (width - padding, height - padding)
-        img_with_rectangle = cv2.rectangle(img_copy, start_point, end_point, color, 5)
-        img_with_text = cv2.putText(img_with_rectangle, label, (50, height - 60),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
-        new_img_path = img_path.rsplit('.', 1)[0] + '_output.png'
-        new_img_full_path = os.path.join('static', new_img_path)
-        cv2.imwrite(new_img_full_path, img_with_text)
-        results.append((label, new_img_path))
+            height, width, _ = img_copy.shape
+            padding = 100
+            start_point = (padding, padding)
+            end_point = (width - padding, height - padding)
+            img_with_rectangle = cv2.rectangle(img_copy, start_point, end_point, color, 5)
+            img_with_text = cv2.putText(img_with_rectangle, label, (50, height - 60),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+            new_img_path = img_path.rsplit('.', 1)[0] + '_output.png'
+            new_img_full_path = os.path.join('static', new_img_path)
+            cv2.imwrite(new_img_full_path, img_with_text)
+            results.append((label, new_img_path))
+            
+        except Exception as cv_error:
+            logger.error(f"OpenCV processing failed for {img_path}: {str(cv_error)}")
+            # Fallback without OpenCV processing
+            label = "Cancer: Analysis Available (Processing Fallback)"
+            new_img_path = img_path.rsplit('.', 1)[0] + '_output.png'
+            results.append((label, new_img_path))
+            
     return results
 
 @lru_cache(maxsize=50)
@@ -291,9 +342,18 @@ def generate_data(name: str, age: int, disease_name: str, clinical_history: str,
 def chat_with_bot(user_input: str) -> str:
     if not user_input.strip():
         return "Please enter a valid query."
-    context = doc_processor.retrieve_context(user_input)
-    prompt = f"Use the following context to answer the question.\nContext:\n{context}\nUser Question: {user_input}\nAnswer:"
-    return GroqClient.call_groq_api(prompt, model="gemma2-9b-it")
+    
+    try:
+        if doc_processor and hasattr(doc_processor, 'retrieve_context'):
+            context = doc_processor.retrieve_context(user_input)
+        else:
+            context = "No document context available."
+        
+        prompt = f"Use the following context to answer the question.\nContext:\n{context}\nUser Question: {user_input}\nAnswer:"
+        return GroqClient.call_groq_api(prompt, model="gemma2-9b-it")
+    except Exception as e:
+        logger.error(f"Error in chat_with_bot: {str(e)}")
+        return "Sorry, I encountered an error processing your request. Please try again."
 
 # Routes
 @app.route('/health')
@@ -492,23 +552,60 @@ def chat():
         return jsonify({"response": "An error occurred while processing your request."}), 500
 
 def init_app():
-    with app.app_context():
-        global doc_processor, _model
-        db.create_all()
-        doc_processor = DocumentProcessor()
-        doc_processor.update_vector_store([])
-        # Load model at startup
-        try:
-            logger.info(f"TensorFlow version: {tf.__version__}")
-            model_path = os.path.join(os.path.dirname(__file__), 'Modal', 'breast_cancer.keras')
-            logger.info(f"Loading model from: {os.path.abspath(model_path)}")
-            _model = load_model(model_path, compile=False)
-            logger.info("Model loaded successfully")
-            logger.info(f"Model summary: {_model.summary()}")
-        except Exception as e:
-            logger.error(f"Failed to load model at startup: {str(e)}. Using fallback.")
-            _model = None
-    logger.info("Application initialized successfully")
+    """Initialize the application with proper error handling for Azure"""
+    try:
+        with app.app_context():
+            global doc_processor, _model
+            
+            # Create database tables
+            try:
+                db.create_all()
+                logger.info("Database tables created successfully")
+            except Exception as db_error:
+                logger.error(f"Database initialization failed: {str(db_error)}")
+                # Continue without database for demo purposes
+            
+            # Initialize document processor
+            try:
+                doc_processor = DocumentProcessor()
+                if LANGCHAIN_AVAILABLE:
+                    doc_processor.update_vector_store([])
+                logger.info("Document processor initialized successfully")
+            except Exception as doc_error:
+                logger.error(f"Document processor initialization failed: {str(doc_error)}")
+                # Create a minimal fallback processor
+                class MinimalDocProcessor:
+                    def retrieve_context(self, query: str, k: int = 3) -> str:
+                        return "Document processing not available in this environment."
+                    def update_vector_store(self, current_report):
+                        pass
+                doc_processor = MinimalDocProcessor()
+            
+            # Load model at startup (optional for Azure)
+            if TF_AVAILABLE:
+                try:
+                    logger.info(f"TensorFlow version: {tf.__version__}")
+                    model_path = os.path.join(os.path.dirname(__file__), 'Modal', 'breast_cancer.keras')
+                    logger.info(f"Loading model from: {os.path.abspath(model_path)}")
+                    if os.path.exists(model_path):
+                        _model = load_model(model_path, compile=False)
+                        logger.info("Model loaded successfully")
+                    else:
+                        logger.warning(f"Model file not found at {model_path}")
+                        _model = None
+                except Exception as e:
+                    logger.error(f"Failed to load model at startup: {str(e)}. Using fallback.")
+                    _model = None
+            else:
+                logger.warning("TensorFlow not available, skipping model loading")
+                _model = None
+                
+        logger.info("Application initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"Critical error during app initialization: {str(e)}")
+        # Don't crash, continue with minimal setup
+        pass
 
 if __name__ == '__main__':
     init_app()

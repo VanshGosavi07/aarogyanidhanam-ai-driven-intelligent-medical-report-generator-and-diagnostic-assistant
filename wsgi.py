@@ -1,75 +1,116 @@
 #!/usr/bin/env python
 """
 WSGI entry point for production deployment
-This file is used by Vercel and other WSGI servers to serve the Flask application
+This file is used by Azure and other WSGI servers to serve the Flask application
 """
 
 import os
 import sys
 import tempfile
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Add the current directory to Python path
-sys.path.insert(0, os.path.dirname(__file__))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
 
 # Set production environment variables
 os.environ['FLASK_ENV'] = 'production'
-os.environ['PYTHONPATH'] = os.path.dirname(__file__)
+os.environ['PYTHONPATH'] = current_dir
 
-# For Vercel deployment, use in-memory SQLite database
-if 'VERCEL' in os.environ or 'VERCEL_ENV' in os.environ:
-    # Use in-memory database for serverless deployment
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    # Disable file system operations that might fail in serverless
-    os.environ['DISABLE_FILE_UPLOADS'] = 'true'
+logger.info(f"Starting WSGI application from {current_dir}")
+logger.info(f"Python path: {sys.path}")
+
+# For Azure deployment
+if 'WEBSITE_SITE_NAME' in os.environ:
+    logger.info("Running on Azure App Service")
+    # Use Azure's managed database or in-memory for demo
+    if 'DATABASE_URL' not in os.environ:
+        os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
 else:
     # For local production testing
     temp_dir = tempfile.gettempdir()
-    os.environ['DATABASE_URL'] = f'sqlite:///{os.path.join(temp_dir, "production.db")}'
-
-# Import the Flask application from main.py
-from main import app
-import os
+    if 'DATABASE_URL' not in os.environ:
+        os.environ['DATABASE_URL'] = f'sqlite:///{os.path.join(temp_dir, "production.db")}'
 
 # Debug: Print current working directory and file structure
-print(f"Current working directory: {os.getcwd()}")
-print(f"Files in current directory: {os.listdir('.')}")
+logger.info(f"Current working directory: {os.getcwd()}")
+if os.path.exists('.'):
+    logger.info(f"Files in current directory: {os.listdir('.')}")
 if os.path.exists('templates'):
-    print(f"Templates directory exists: {os.listdir('templates')[:10]}")  # First 10 files
+    logger.info(f"Templates directory exists with {len(os.listdir('templates'))} files")
 if os.path.exists('static'):
-    print(f"Static directory exists: {os.listdir('static')[:10]}")  # First 10 files
+    logger.info(f"Static directory exists with {len(os.listdir('static'))} files")
 
-# Initialize the application for production
-def init_production_app():
-    """Initialize app with production configuration"""
-    try:
-        with app.app_context():
-            # Import here to avoid circular imports
-            from main import init_app
-            init_app()
-    except Exception as e:
-        # Log error but don't crash the application
-        print(f"Error during app initialization: {str(e)}")
-        app.logger.error(f"Error during app initialization: {str(e)}")
-        # Continue with minimal initialization
-        try:
-            from main import db, doc_processor
-            if doc_processor is None:
-                from main import DocumentProcessor
-                doc_processor = DocumentProcessor()
-        except Exception as init_error:
-            print(f"Fallback initialization failed: {str(init_error)}")
-
-# Initialize the application
-init_production_app()
+try:
+    # Import the Flask application from main.py
+    from main import app
+    logger.info("Successfully imported Flask app from main.py")
+    
+    # Initialize the application for production
+    with app.app_context():
+        from main import init_app
+        init_app()
+        logger.info("Application initialized successfully")
+        
+except ImportError as ie:
+    logger.error(f"Import error: {str(ie)}")
+    # Create a minimal Flask app as fallback
+    from flask import Flask
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def import_error():
+        return f"""
+        <html>
+        <head><title>Import Error</title></head>
+        <body>
+            <h1>Application Import Error</h1>
+            <p>Error: {str(ie)}</p>
+            <p>Please check your Python dependencies and file structure.</p>
+        </body>
+        </html>
+        """
+    
+    logger.warning("Using minimal Flask app due to import error")
+        
+except Exception as e:
+    logger.error(f"General error during app initialization: {str(e)}")
+    # Create a fallback app
+    from flask import Flask
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def general_error():
+        return f"""
+        <html>
+        <head><title>Application Error</title></head>
+        <body>
+            <h1>Application Error</h1>
+            <p>Error: {str(e)}</p>
+            <p>The application failed to start properly.</p>
+        </body>
+        </html>
+        """
+    
+    logger.warning("Using fallback Flask app due to general error")
 
 # WSGI application object
 application = app
 
 # Set production configuration
-application.config['ENV'] = 'production'
-application.config['DEBUG'] = False
-application.config['TESTING'] = False
+if hasattr(application, 'config'):
+    application.config['ENV'] = 'production'
+    application.config['DEBUG'] = False
+    application.config['TESTING'] = False
+
+logger.info("WSGI application ready")
 
 if __name__ == "__main__":
     # This is for local testing only
-    application.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    port = int(os.environ.get('PORT', 8000))
+    logger.info(f"Starting application on port {port}")
+    application.run(host='0.0.0.0', port=port, debug=False)
