@@ -1,4 +1,3 @@
-import requests
 import json
 import os
 import ast
@@ -13,9 +12,38 @@ from wtforms import StringField, PasswordField, SubmitField, SelectField, TextAr
 from wtforms.validators import DataRequired, Email, ValidationError, Length
 from flask_wtf.file import FileField, FileRequired, FileAllowed
 from flask_sqlalchemy import SQLAlchemy
-import bcrypt
 from functools import lru_cache
-import fitz  # PyMuPDF
+
+# Configure logging first - BEFORE any other imports that might use logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Try to import bcrypt with fallback
+try:
+    import bcrypt
+    BCRYPT_AVAILABLE = True
+    logger.info("bcrypt imported successfully")
+except ImportError as e:
+    logger.warning(f"bcrypt import failed: {str(e)}. Password hashing disabled.")
+    BCRYPT_AVAILABLE = False
+
+# Try to import requests with fallback
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+    logger.info("Requests imported successfully")
+except ImportError as e:
+    logger.warning(f"Requests import failed: {str(e)}. Chat API features disabled.")
+    REQUESTS_AVAILABLE = False
+
+# Try to import PyMuPDF with fallback
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+    logger.info("PyMuPDF imported successfully")
+except ImportError as e:
+    logger.warning(f"PyMuPDF import failed: {str(e)}. PDF processing disabled.")
+    PYMUPDF_AVAILABLE = False
 
 # Try to import Langchain components with fallback
 try:
@@ -27,10 +55,6 @@ try:
 except ImportError as e:
     logger.warning(f"Langchain import failed: {str(e)}. RAG features disabled.")
     LANGCHAIN_AVAILABLE = False
-
-# Configure logging first
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Try to import TensorFlow with fallback
 try:
@@ -77,10 +101,38 @@ def after_request(response):
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-production-secret-key-change-this-in-production-medical-app-2025')
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
-# Database configuration - handle production deployment
+# Database configuration - handle Azure Linux deployment
 if 'DATABASE_URL' in os.environ:
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+elif 'WEBSITE_SITE_NAME' in os.environ:
+    # Azure Linux App Service - use writable paths
+    # Try multiple possible writable locations for Azure Linux
+    possible_paths = ['/home/data', '/tmp/data', '/home/site/data']
+    azure_data_dir = None
+    
+    for path in possible_paths:
+        try:
+            os.makedirs(path, exist_ok=True)
+            # Test if we can write to this directory
+            test_file = os.path.join(path, 'test_write.tmp')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            azure_data_dir = path
+            break
+        except Exception:
+            continue
+    
+    if azure_data_dir:
+        db_path = os.path.join(azure_data_dir, 'Database.db')
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+        logger.info(f"Using Azure Linux SQLite database at: {db_path}")
+    else:
+        # Fallback to in-memory database
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        logger.warning("Using in-memory SQLite database as fallback")
 else:
+    # Local development
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/Database.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -137,11 +189,51 @@ class DiagnosisForm(FlaskForm):
         if not field.data.replace(' ', '').isalpha():
             raise ValidationError('Name must contain only letters')
 
-# Ensure directories exist (only if not in serverless environment)
-if not os.environ.get('VERCEL') and not os.environ.get('DISABLE_FILE_UPLOADS'):
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    os.makedirs(app.config['PDF_FOLDER'], exist_ok=True)
-    os.makedirs('instance', exist_ok=True)
+# Ensure directories exist - handle Azure Linux environment
+try:
+    if not os.environ.get('VERCEL') and not os.environ.get('DISABLE_FILE_UPLOADS'):
+        if 'WEBSITE_SITE_NAME' in os.environ:
+            # Azure Linux App Service - use writable paths
+            possible_data_paths = ['/home/data', '/tmp/data', '/home/site/data']
+            azure_data_dir = None
+            
+            # Find a writable directory
+            for path in possible_data_paths:
+                try:
+                    os.makedirs(path, exist_ok=True)
+                    test_file = os.path.join(path, 'test_write.tmp')
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    azure_data_dir = path
+                    break
+                except Exception:
+                    continue
+            
+            if azure_data_dir:
+                upload_folder = os.path.join(azure_data_dir, 'uploads')
+                pdf_folder = os.path.join(azure_data_dir, 'pdf')
+                os.makedirs(upload_folder, exist_ok=True)
+                os.makedirs(pdf_folder, exist_ok=True)
+                app.config['UPLOAD_FOLDER'] = upload_folder
+                app.config['PDF_FOLDER'] = pdf_folder
+                logger.info(f"Azure Linux: Created directories at {azure_data_dir}")
+            else:
+                # Use fallback temp directories
+                app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
+                app.config['PDF_FOLDER'] = '/tmp/pdf'
+                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                os.makedirs(app.config['PDF_FOLDER'], exist_ok=True)
+                logger.warning("Using fallback temp directories")
+        else:
+            # Local development
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            os.makedirs(app.config['PDF_FOLDER'], exist_ok=True)
+            os.makedirs('instance', exist_ok=True)
+except Exception as dir_error:
+    logger.warning(f"Failed to create directories: {str(dir_error)}")
+    # Use fallback paths
+    pass
 
 # TensorFlow Model Singleton
 _model = None
@@ -169,9 +261,9 @@ class DocumentProcessor:
 
     def extract_text_from_pdfs(self, folder_path: str) -> List[str]:
         try:
-            # Skip PDF processing in serverless environment
-            if os.environ.get('VERCEL') or not os.path.exists(folder_path):
-                logger.info("Skipping PDF extraction in serverless environment or missing folder")
+            # Skip PDF processing in serverless environment or if PyMuPDF not available
+            if os.environ.get('VERCEL') or not os.path.exists(folder_path) or not PYMUPDF_AVAILABLE:
+                logger.info("Skipping PDF extraction - serverless environment, missing folder, or PyMuPDF not available")
                 return []
                 
             extracted_texts = []
@@ -179,6 +271,7 @@ class DocumentProcessor:
                 if pdf_file.lower().endswith(".pdf"):
                     file_path = os.path.join(folder_path, pdf_file)
                     try:
+                        import fitz
                         with fitz.open(file_path) as doc:
                             text = "".join(page.get_text("text") + "\n" for page in doc)
                             extracted_texts.append(text)
@@ -223,16 +316,21 @@ class GroqClient:
     def call_groq_api(prompt: str, model: str = "gemma2-9b-it") -> str:
         if not GROQ_API_KEY:
             logger.error("GROQ_API_KEY not configured")
-            return "API key not configured"
+            return "API key not configured for chat responses."
+        
+        if not REQUESTS_AVAILABLE:
+            logger.warning("Requests library not available")
+            return "Chat API temporarily unavailable. Please try again later."
+            
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         data = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 500}
         try:
             response = requests.post(GROQ_API_URL, json=data, headers=headers, timeout=10)
             response.raise_for_status()
             return response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"Groq API request failed: {str(e)}")
-            return "Sorry, I couldn't process that request."
+            return "Sorry, I couldn't process that request. Chat service is temporarily unavailable."
 
 # Global Document Processor
 doc_processor = None
@@ -406,6 +504,10 @@ def home():
 def register():
     form = RegisterForm()
     if form.validate_on_submit():
+        if not BCRYPT_AVAILABLE:
+            flash("Registration temporarily unavailable. Please try again later.")
+            return render_template('register.html', form=form)
+            
         name = form.name.data
         email = form.email.data
         password = form.password.data.encode('utf-8')
@@ -415,7 +517,14 @@ def register():
         user_type = form.user_type.data
         gender = form.gender.data
         age = datetime.now().year - date_of_birth.year - ((datetime.now().month, datetime.now().day) < (date_of_birth.month, date_of_birth.day))
-        hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
+        
+        try:
+            hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
+        except Exception as e:
+            logger.error(f"Password hashing failed: {str(e)}")
+            flash("Registration failed due to security error. Please try again.")
+            return render_template('register.html', form=form)
+            
         new_user = User(name=name, email=email, password=hashed_password, contact_number=contact_number,
                        date_of_birth=date_of_birth, city=city, user_type=user_type, gender=gender, age=age)
         try:
@@ -433,14 +542,23 @@ def register():
 def login():
     form = LoginForm()
     if form.validate_on_submit():
+        if not BCRYPT_AVAILABLE:
+            flash("Login temporarily unavailable. Please try again later.")
+            return render_template('login.html', form=form)
+            
         email = form.email.data
         password = form.password.data.encode('utf-8')
         user = User.query.filter_by(email=email).first()
-        if user and bcrypt.checkpw(password, user.password):
-            session['user_id'] = user.id
-            session['name'] = user.name
-            session['user_type'] = user.user_type
-            return redirect(url_for('form'))
+        
+        try:
+            if user and bcrypt.checkpw(password, user.password):
+                session['user_id'] = user.id
+                session['name'] = user.name
+                session['user_type'] = user.user_type
+                return redirect(url_for('form'))
+        except Exception as e:
+            logger.error(f"Password verification failed: {str(e)}")
+            
         flash("Login failed. Please check your email and password.")
     return render_template('login.html', form=form)
 
