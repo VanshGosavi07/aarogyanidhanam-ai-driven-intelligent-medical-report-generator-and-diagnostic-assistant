@@ -28,6 +28,15 @@ else:
 
 # Import the Flask application from main.py
 from main import app
+import os
+
+# Debug: Print current working directory and file structure
+print(f"Current working directory: {os.getcwd()}")
+print(f"Files in current directory: {os.listdir('.')}")
+if os.path.exists('templates'):
+    print(f"Templates directory exists: {os.listdir('templates')[:10]}")  # First 10 files
+if os.path.exists('static'):
+    print(f"Static directory exists: {os.listdir('static')[:10]}")  # First 10 files
 
 # Initialize the application for production
 def init_production_app():

@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
 
+# Add some debugging
+@app.before_request
+def before_request():
+    if not hasattr(app, '_logged_paths'):
+        logger.info("Application paths:")
+        logger.info(f"Template folder: {app.template_folder}")
+        logger.info(f"Static folder: {app.static_folder}")
+        logger.info(f"App root path: {app.root_path}")
+        logger.info(f"Instance path: {app.instance_path}")
+        app._logged_paths = True
+
+@app.after_request
+def after_request(response):
+    logger.info(f"Response status: {response.status_code}, Content-Length: {response.content_length}")
+    return response
+
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-production-secret-key-change-this-in-production-medical-app-2025')
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -280,9 +296,51 @@ def chat_with_bot(user_input: str) -> str:
     return GroqClient.call_groq_api(prompt, model="gemma2-9b-it")
 
 # Routes
+@app.route('/health')
+def health():
+    import os
+    return {
+        "status": "healthy",
+        "template_folder": app.template_folder,
+        "static_folder": app.static_folder,
+        "templates_exist": os.path.exists('templates'),
+        "home_template_exists": os.path.exists('templates/home.html'),
+        "current_dir": os.getcwd(),
+        "files_in_dir": os.listdir('.') if os.path.exists('.') else []
+    }
+
+@app.route('/test')
+def test():
+    return """
+    <html>
+    <head><title>Test Page</title></head>
+    <body>
+        <h1>Test Page Working!</h1>
+        <p>If you see this, the Flask app is running correctly.</p>
+        <p><a href="/">Go to Home</a></p>
+        <p><a href="/health">Check Health</a></p>
+    </body>
+    </html>
+    """
+
 @app.route('/')
 def home():
-    return render_template('home.html')
+    try:
+        logger.info("Home route accessed")
+        return render_template('home.html')
+    except Exception as e:
+        logger.error(f"Error rendering home template: {str(e)}")
+        return f"""
+        <html>
+        <head><title>Medical Diagnosis System</title></head>
+        <body>
+            <h1>Medical Diagnosis System</h1>
+            <p>Welcome to the AI-Driven Medical Report Generator</p>
+            <p><a href="/register">Register</a> | <a href="/login">Login</a></p>
+            <p>Error loading template: {str(e)}</p>
+        </body>
+        </html>
+        """
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
